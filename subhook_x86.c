@@ -283,7 +283,7 @@ static int subhook_disasm(void *src, int *reloc_op_offset) {
     }
 
 #ifdef SUBHOOK_X86_64
-    if (reloc_op_offset != NULL && rm == 5) {
+    if (reloc_op_offset != NULL && mod == 0 && rm == 5) {
       *reloc_op_offset = (int32_t)len; /* RIP-relative addressing */
     }
 #endif
