@@ -200,15 +200,22 @@ static int subhook_disasm(void *src, int *reloc_op_offset) {
     /* XOR r/m8, r8      */ {0x30, 0, MODRM},
     /* XOR r/m32, r32    */ {0x31, 0, MODRM},
     /* XOR r8, r/m8      */ {0x32, 0, MODRM},
-    /* XOR r32, r/m32    */ {0x33, 0, MODRM}
+    /* XOR r32, r/m32    */ {0x33, 0, MODRM},
+    /* 2 byte opcode     */ {0x0f, 0, 0}
+  };
+
+  static struct opcode_info twobyte_opcodes[] = {
+    /* syscall           */ {0x05, 0, 0},
+    /* nop               */ {0x1f, 0, MODRM}
   };
 
   uint8_t *code = src;
-  size_t i;
+  size_t i, j;
   int len = 0;
   int operand_size = 4;
   uint8_t opcode = 0;
   int found_opcode = false;
+  unsigned int flags;
 
   for (i = 0; i < sizeof(prefixes) / sizeof(*prefixes); i++) {
     if (code[len] == prefixes[i]) {
@@ -248,7 +255,18 @@ static int subhook_disasm(void *src, int *reloc_op_offset) {
     }
 
     if (found_opcode) {
-      opcode = code[len++];
+      if (code[len] == 0x0f) { // two byte opcode handling
+        found_opcode = false;
+        for (j = 0; j < sizeof(twobyte_opcodes) / sizeof(*twobyte_opcodes); j++) {
+          if (code[len + 1] == twobyte_opcodes[j].opcode) {
+            len += 2;
+            found_opcode = true;
+            break;
+          }
+        }
+      } else {
+        opcode = code[len++];
+      }
       break;
     }
   }
@@ -256,12 +274,16 @@ static int subhook_disasm(void *src, int *reloc_op_offset) {
   if (!found_opcode) {
     return 0;
   }
-
-  if (reloc_op_offset != NULL && opcodes[i].flags & RELOC) {
+  if (opcodes[i].opcode == 0x0f) {
+    flags = twobyte_opcodes[j].flags;
+  } else {
+    flags = opcodes[i].flags;
+  }
+  if (reloc_op_offset != NULL && flags & RELOC) {
     *reloc_op_offset = len; /* relative call or jump */
   }
 
-  if (opcodes[i].flags & MODRM) {
+  if (flags & MODRM) {
     uint8_t modrm = code[len++]; /* +1 for Mod/RM byte */
     uint8_t mod = modrm >> 6;
     uint8_t rm = modrm & 7;
@@ -296,13 +318,13 @@ static int subhook_disasm(void *src, int *reloc_op_offset) {
     }
   }
 
-  if (opcodes[i].flags & IMM8) {
+  if (flags & IMM8) {
     len += 1;
   }
-  if (opcodes[i].flags & IMM16) {
+  if (flags & IMM16) {
     len += 2;
   }
-  if (opcodes[i].flags & IMM32) {
+  if (flags & IMM32) {
     len += operand_size;
   }
 
